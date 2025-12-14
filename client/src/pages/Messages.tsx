@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/store";
-import { MOCK_USERS, MOCK_MESSAGES, Message, User } from "@/lib/mockData";
-import { Send, Phone, Video, MoreVertical, Search, MessageCircle } from "lucide-react";
+import { messagesAPI } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Send, Phone, Video, MoreVertical, Search, MessageCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,41 +12,45 @@ export default function Messages() {
   const { currentUser } = useAuth();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
-  
-  // Local state for messages to allow "sending"
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+  const queryClient = useQueryClient();
 
   if (!currentUser) return null;
 
-  // 1. Get all unique users who have exchanged messages with current user
-  // For demo, we'll also just add all opposite gender users as "potential" chats to make it look populated
-  const potentialChatUsers = MOCK_USERS.filter(u => 
-    (currentUser.gender === 'male' && u.gender === 'female') ||
-    (currentUser.gender === 'female' && u.gender === 'male')
-  );
+  // Fetch all conversations (users we've chatted with)
+  const { data: conversations = [], isLoading: conversationsLoading } = useQuery({
+    queryKey: ["conversations"],
+    queryFn: () => messagesAPI.getConversations(),
+    enabled: !!currentUser,
+  });
 
-  const selectedUser = potentialChatUsers.find(u => u.id === selectedChatId);
+  // Fetch messages for selected conversation
+  const { data: messages = [], isLoading: messagesLoading } = useQuery({
+    queryKey: ["messages", selectedChatId],
+    queryFn: () => messagesAPI.getConversation(selectedChatId!),
+    enabled: !!selectedChatId,
+  });
 
-  // Filter messages for the selected conversation
-  const currentChatMessages = messages.filter(m => 
-    (m.senderId === currentUser.id && m.receiverId === selectedChatId) ||
-    (m.senderId === selectedChatId && m.receiverId === currentUser.id)
-  ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  // Send message mutation
+  const sendMessageMutation = useMutation({
+    mutationFn: messagesAPI.sendMessage,
+    onSuccess: () => {
+      // Refetch messages for current conversation
+      queryClient.invalidateQueries({ queryKey: ["messages", selectedChatId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      setMessageInput("");
+    },
+  });
+
+  const selectedUser = conversations.find(u => u.id === selectedChatId);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim() || !selectedChatId) return;
 
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
-      senderId: currentUser.id,
+    sendMessageMutation.mutate({
       receiverId: selectedChatId,
       text: messageInput,
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages([...messages, newMessage]);
-    setMessageInput("");
+    });
   };
 
   return (
@@ -62,19 +67,23 @@ export default function Messages() {
             <Input 
               placeholder="Search matches..." 
               className="pl-9 bg-white border-gray-200 rounded-xl focus-visible:ring-primary/20" 
+              data-testid="input-search-conversations"
             />
           </div>
         </div>
 
         <ScrollArea className="flex-1 px-3">
-          <div className="space-y-1 pb-4">
-            {potentialChatUsers.map(user => {
-              // Find last message
-              const lastMsg = messages
-                .filter(m => (m.senderId === user.id && m.receiverId === currentUser.id) || (m.senderId === currentUser.id && m.receiverId === user.id))
-                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
-
-              return (
+          {conversationsLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="text-center py-10 px-4">
+              <p className="text-sm text-muted-foreground">No conversations yet. Head to Discover to find matches!</p>
+            </div>
+          ) : (
+            <div className="space-y-1 pb-4">
+              {conversations.map(user => (
                 <button
                   key={user.id}
                   onClick={() => setSelectedChatId(user.id)}
@@ -82,30 +91,32 @@ export default function Messages() {
                     "w-full p-3 flex items-center gap-3 rounded-xl transition-all duration-200 hover:bg-white hover:shadow-sm text-left group",
                     selectedChatId === user.id ? "bg-white shadow-md" : "transparent"
                   )}
+                  data-testid={`button-conversation-${user.id}`}
                 >
                   <div className="relative">
-                    <img src={user.avatar} alt={user.name} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
+                    {user.avatar ? (
+                      <img src={user.avatar} alt={user.name} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold border-2 border-white shadow-sm">
+                        {user.name[0]}
+                      </div>
+                    )}
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className={cn("font-medium text-gray-900", selectedChatId === user.id && "text-primary")}>
+                      <span className={cn("font-medium text-gray-900", selectedChatId === user.id && "text-primary")} data-testid={`text-conversation-name-${user.id}`}>
                         {user.name}
                       </span>
-                      {lastMsg && (
-                        <span className="text-xs text-gray-400">
-                          {new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      )}
                     </div>
                     <p className="text-sm text-gray-500 truncate group-hover:text-gray-700 transition-colors">
-                      {lastMsg ? lastMsg.text : "Start a conversation"}
+                      Start a conversation
                     </p>
                   </div>
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </ScrollArea>
       </div>
 
@@ -124,14 +135,21 @@ export default function Messages() {
                    size="icon" 
                    className="md:hidden -ml-2"
                    onClick={() => setSelectedChatId(null)}
+                   data-testid="button-back-to-conversations"
                  >
                    <ArrowLeft className="w-5 h-5" />
                  </Button>
                  
                  <div className="flex items-center gap-3">
-                   <img src={selectedUser.avatar} alt={selectedUser.name} className="w-10 h-10 rounded-full object-cover" />
+                   {selectedUser.avatar ? (
+                     <img src={selectedUser.avatar} alt={selectedUser.name} className="w-10 h-10 rounded-full object-cover" />
+                   ) : (
+                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                       {selectedUser.name[0]}
+                     </div>
+                   )}
                    <div>
-                     <h2 className="font-serif font-bold text-gray-900">{selectedUser.name}</h2>
+                     <h2 className="font-serif font-bold text-gray-900" data-testid="text-selected-user-name">{selectedUser.name}</h2>
                      <p className="text-xs text-green-600 font-medium flex items-center gap-1">
                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
                        Online now
@@ -141,13 +159,13 @@ export default function Messages() {
                </div>
                
                <div className="flex items-center gap-1">
-                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-primary rounded-full">
+                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-primary rounded-full" data-testid="button-call">
                    <Phone className="w-5 h-5" />
                  </Button>
-                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-primary rounded-full">
+                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-primary rounded-full" data-testid="button-video">
                    <Video className="w-5 h-5" />
                  </Button>
-                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600 rounded-full">
+                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600 rounded-full" data-testid="button-more">
                    <MoreVertical className="w-5 h-5" />
                  </Button>
                </div>
@@ -155,42 +173,55 @@ export default function Messages() {
 
             {/* Messages Area */}
             <ScrollArea className="flex-1 p-6 bg-[#FAFAFA]">
-              <div className="space-y-6 flex flex-col">
-                <div className="text-center text-xs text-gray-400 my-4 uppercase tracking-widest font-medium">Today</div>
-                
-                {currentChatMessages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
-                    <img src={selectedUser.avatar} className="w-20 h-20 rounded-full mb-4 grayscale" />
-                    <p className="text-sm">You matched with {selectedUser.name}!</p>
-                    <p className="text-sm">Say hello to break the ice.</p>
-                  </div>
-                ) : (
-                  currentChatMessages.map(msg => {
-                    const isMe = msg.senderId === currentUser.id;
-                    return (
-                      <div 
-                        key={msg.id} 
-                        className={cn(
-                          "flex max-w-[80%]",
-                          isMe ? "self-end flex-row-reverse" : "self-start"
-                        )}
-                      >
-                        <div className={cn(
-                          "px-5 py-3 rounded-2xl shadow-sm text-sm leading-relaxed",
-                          isMe 
-                            ? "bg-primary text-white rounded-tr-none" 
-                            : "bg-white text-gray-800 rounded-tl-none border border-gray-100"
-                        )}>
-                          {msg.text}
+              {messagesLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <div className="space-y-6 flex flex-col">
+                  <div className="text-center text-xs text-gray-400 my-4 uppercase tracking-widest font-medium">Today</div>
+                  
+                  {messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
+                      {selectedUser.avatar ? (
+                        <img src={selectedUser.avatar} className="w-20 h-20 rounded-full mb-4 grayscale" alt={selectedUser.name} />
+                      ) : (
+                        <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center text-2xl font-semibold text-gray-400 mb-4">
+                          {selectedUser.name[0]}
                         </div>
-                        <span className="text-[10px] text-gray-400 self-end mx-2 mb-1">
-                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                      )}
+                      <p className="text-sm">You matched with {selectedUser.name}!</p>
+                      <p className="text-sm">Say hello to break the ice.</p>
+                    </div>
+                  ) : (
+                    messages.map(msg => {
+                      const isMe = msg.senderId === currentUser.id;
+                      return (
+                        <div 
+                          key={msg.id} 
+                          className={cn(
+                            "flex max-w-[80%]",
+                            isMe ? "self-end flex-row-reverse" : "self-start"
+                          )}
+                          data-testid={`message-${msg.id}`}
+                        >
+                          <div className={cn(
+                            "px-5 py-3 rounded-2xl shadow-sm text-sm leading-relaxed",
+                            isMe 
+                              ? "bg-primary text-white rounded-tr-none" 
+                              : "bg-white text-gray-800 rounded-tl-none border border-gray-100"
+                          )}>
+                            {msg.text}
+                          </div>
+                          <span className="text-[10px] text-gray-400 self-end mx-2 mb-1">
+                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </ScrollArea>
 
             {/* Input Area */}
@@ -201,13 +232,20 @@ export default function Messages() {
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder={`Message ${selectedUser.name}...`}
                   className="rounded-full bg-gray-50 border-transparent focus:bg-white focus:border-primary/20 transition-all py-6 pl-6"
+                  disabled={sendMessageMutation.isPending}
+                  data-testid="input-message"
                 />
                 <Button 
                   type="submit" 
-                  disabled={!messageInput.trim()}
+                  disabled={!messageInput.trim() || sendMessageMutation.isPending}
                   className="rounded-full w-12 h-12 shrink-0 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25"
+                  data-testid="button-send-message"
                 >
-                  <Send className="w-5 h-5 ml-0.5" />
+                  {sendMessageMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5 ml-0.5" />
+                  )}
                 </Button>
               </form>
             </div>

@@ -21,48 +21,57 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 space-y-2">
-          <Link href="/">
-            <a className={cn(
+          <Link 
+            href="/"
+            className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
               location === "/" 
                 ? "bg-primary/10 text-primary font-medium" 
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}>
-              <Heart className={cn("w-5 h-5", location === "/" && "fill-current")} />
-              Discover
-            </a>
+            )}
+          >
+            <Heart className={cn("w-5 h-5", location === "/" && "fill-current")} />
+            Discover
           </Link>
-          <Link href="/messages">
-            <a className={cn(
+          <Link 
+            href="/messages"
+            className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
               location === "/messages" 
                 ? "bg-primary/10 text-primary font-medium" 
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}>
-              <MessageCircle className={cn("w-5 h-5", location === "/messages" && "fill-current")} />
-              Messages
-            </a>
+            )}
+          >
+            <MessageCircle className={cn("w-5 h-5", location === "/messages" && "fill-current")} />
+            Messages
           </Link>
-          <Link href="/profile">
-            <a className={cn(
+          <Link 
+            href="/profile"
+            className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
               location === "/profile" 
                 ? "bg-primary/10 text-primary font-medium" 
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}>
-              <UserIcon className={cn("w-5 h-5", location === "/profile" && "fill-current")} />
-              Profile
-            </a>
+            )}
+          >
+            <UserIcon className={cn("w-5 h-5", location === "/profile" && "fill-current")} />
+            Profile
           </Link>
         </nav>
 
         <div className="mt-auto pt-6 border-t border-border">
           <div className="flex items-center gap-3 mb-4 px-2">
-            <img 
-              src={currentUser.avatar} 
-              alt={currentUser.name} 
-              className="w-10 h-10 rounded-full object-cover border-2 border-background shadow-sm"
-            />
+            {currentUser.avatar ? (
+              <img 
+                src={currentUser.avatar} 
+                alt={currentUser.name} 
+                className="w-10 h-10 rounded-full object-cover border-2 border-background shadow-sm"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold border-2 border-background shadow-sm">
+                {currentUser.name[0]}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{currentUser.name}</p>
               <p className="text-xs text-muted-foreground capitalize">{currentUser.gender}</p>
@@ -71,6 +80,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <button 
             onClick={logout}
             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-destructive transition-colors"
+            data-testid="button-logout"
           >
             <LogOut className="w-4 h-4" />
             Sign Out

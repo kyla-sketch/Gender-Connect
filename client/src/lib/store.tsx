@@ -1,32 +1,55 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { User, MOCK_USERS, Gender } from './mockData';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import type { User, InsertUser } from '@shared/schema';
+import { authAPI } from './api';
 
 interface AuthContextType {
-  currentUser: User | null;
-  login: (gender: Gender) => void;
-  logout: () => void;
+  currentUser: Omit<User, "password"> | null;
+  login: (email: string, password: string) => Promise<void>;
+  register: (data: InsertUser) => Promise<void>;
+  logout: () => Promise<void>;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<Omit<User, "password"> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = (gender: Gender) => {
-    // For demo purposes, we just pick the first user of that gender
-    // In a real app, this would be a real login
-    const user = MOCK_USERS.find(u => u.gender === gender);
-    if (user) {
-      setCurrentUser(user);
-    }
+  // Check if user is already logged in on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const user = await authAPI.getCurrentUser();
+        setCurrentUser(user);
+      } catch (error) {
+        // Not logged in
+        setCurrentUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    const user = await authAPI.login(email, password);
+    setCurrentUser(user);
   };
 
-  const logout = () => {
+  const register = async (data: InsertUser) => {
+    const user = await authAPI.register(data);
+    setCurrentUser(user);
+  };
+
+  const logout = async () => {
+    await authAPI.logout();
     setCurrentUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, login, logout }}>
+    <AuthContext.Provider value={{ currentUser, login, register, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
