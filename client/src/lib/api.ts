@@ -1,4 +1,4 @@
-import type { User, InsertUser, Message, InsertMessage } from "@shared/schema";
+import type { User, InsertUser, Message, InsertMessage, Like, InsertLike } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -65,7 +65,58 @@ export const messagesAPI = {
     });
   },
 
+  sendImageMessage: async (receiverId: string, imageFile: File, caption?: string): Promise<Message> => {
+    const formData = new FormData();
+    formData.append('receiverId', receiverId);
+    formData.append('image', imageFile);
+    formData.append('type', 'image');
+    if (caption) {
+      formData.append('text', caption);
+    }
+
+    const response = await fetch(`${API_BASE}/messages`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: "Request failed" }));
+      throw new Error(error.message || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  sendEmojiMessage: async (receiverId: string, emoji: string): Promise<Message> => {
+    return fetchAPI("/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        receiverId,
+        text: emoji,
+        type: 'emoji',
+      }),
+    });
+  },
+
   getConversations: async (): Promise<Omit<User, "password">[]> => {
     return fetchAPI("/conversations");
+  },
+};
+
+// Likes API
+export const likesAPI = {
+  likeUser: async (likedId: string): Promise<{ like: Like; isMatch: boolean }> => {
+    return fetchAPI("/likes", {
+      method: "POST",
+      body: JSON.stringify({ likedId }),
+    });
+  },
+};
+
+// Matches API
+export const matchesAPI = {
+  getMatches: async (): Promise<Omit<User, "password">[]> => {
+    return fetchAPI("/matches");
   },
 };

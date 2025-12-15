@@ -22,7 +22,16 @@ export const messages = pgTable("messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   senderId: varchar("sender_id").notNull().references(() => users.id),
   receiverId: varchar("receiver_id").notNull().references(() => users.id),
-  text: text("text").notNull(),
+  text: text("text"),
+  type: text("type").notNull().default("text"), // "text", "image", "emoji"
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const likes = pgTable("likes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  likerId: varchar("liker_id").notNull().references(() => users.id),
+  likedId: varchar("liked_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -41,8 +50,15 @@ export const insertUserSchema = createInsertSchema(users, {
 });
 
 export const insertMessageSchema = createInsertSchema(messages, {
-  text: z.string().min(1),
+  text: z.string().optional(),
+  type: z.enum(["text", "image", "emoji"]).default("text"),
+  imageUrl: z.string().optional(),
 }).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertLikeSchema = createInsertSchema(likes).omit({
   id: true,
   createdAt: true,
 });
@@ -51,3 +67,5 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Like = typeof likes.$inferSelect;
+export type InsertLike = z.infer<typeof insertLikeSchema>;

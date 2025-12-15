@@ -1,6 +1,6 @@
-import { type User, type InsertUser, type Message, type InsertMessage, users, messages } from "@shared/schema";
+import { type User, type InsertUser, type Message, type InsertMessage, type Like, type InsertLike, users, messages, likes } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, ne } from "drizzle-orm";
+import { eq, and, or, desc, ne, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -13,6 +13,11 @@ export interface IStorage {
   createMessage(message: InsertMessage): Promise<Message>;
   getConversation(userId1: string, userId2: string): Promise<Message[]>;
   getUserConversations(userId: string): Promise<string[]>;
+  
+  // Like operations
+  createLike(like: InsertLike): Promise<Like>;
+  hasLike(likerId: string, likedId: string): Promise<boolean>;
+  getMatches(userId: string): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -82,6 +87,54 @@ export class DatabaseStorage implements IStorage {
     ]);
 
     return Array.from(partnerIds);
+  }
+
+  async createLike(insertLike: InsertLike): Promise<Like> {
+    const [like] = await db
+      .insert(likes)
+      .values(insertLike)
+      .returning();
+    return like;
+  }
+
+  async hasLike(likerId: string, likedId: string): Promise<boolean> {
+    const [existingLike] = await db
+      .select()
+      .from(likes)
+      .where(and(eq(likes.likerId, likerId), eq(likes.likedId, likedId)));
+    return !!existingLike;
+  }
+
+  async getMatches(userId: string): Promise<User[]> {
+    // Get users who liked the current user
+    const likers = await db
+      .select({ userId: likes.likerId })
+      .from(likes)
+      .where(eq(likes.likedId, userId));
+
+    // Get users who the current user liked
+    const likedUsers = await db
+      .select({ userId: likes.likedId })
+      .from(likes)
+      .where(eq(likes.likerId, userId));
+
+    // Find mutual likes (matches)
+    const likerIds = new Set(likers.map(l => l.userId));
+    const likedIds = new Set(likedUsers.map(l => l.userId));
+    
+    const matchIds = Array.from(likerIds).filter(id => likedIds.has(id));
+
+    if (matchIds.length === 0) {
+      return [];
+    }
+
+    // Get full user details for matches
+    const matches = await db
+      .select()
+      .from(users)
+      .where(inArray(users.id, matchIds));
+
+    return matches;
   }
 }
 

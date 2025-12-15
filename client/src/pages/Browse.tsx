@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/store";
 import { usersAPI } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Heart, MapPin, Briefcase, Filter, X, Loader2 } from "lucide-react";
 import { 
   Dialog, 
@@ -14,9 +14,13 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/hooks/use-toast";
+import { likesAPI } from "@/lib/api";
 
 export default function Browse() {
   const { currentUser } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   // Filter state
   const [ageRange, setAgeRange] = useState([18, 50]);
@@ -24,9 +28,36 @@ export default function Browse() {
   
   // Fetch users from API
   const { data: users = [], isLoading, error } = useQuery({
-    queryKey: ["users"],
+    queryKey: ["users", currentUser?.id],
     queryFn: () => usersAPI.getProfiles(),
     enabled: !!currentUser,
+  });
+
+  // Like mutation
+  const likeMutation = useMutation({
+    mutationFn: (likedId: string) => likesAPI.likeUser(likedId),
+    onSuccess: (data, likedId) => {
+      if (data.isMatch) {
+        toast({
+          title: "It's a match! 🎉",
+          description: "You both liked each other. Send them a message!",
+        });
+        // Invalidate matches query to show new match
+        queryClient.invalidateQueries({ queryKey: ["matches"] });
+      } else {
+        toast({
+          title: "Profile liked!",
+          description: "They'll be notified of your interest.",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to like profile",
+        variant: "destructive",
+      });
+    },
   });
 
   if (!currentUser) return null;
@@ -187,7 +218,7 @@ export default function Browse() {
                       <Button className="flex-1 rounded-xl bg-gray-50 text-gray-900 hover:bg-gray-100 border-none shadow-none font-medium" data-testid={`button-view-profile-${user.id}`}>
                         View Profile
                       </Button>
-                      <Button size="icon" className="rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors" data-testid={`button-like-${user.id}`}>
+                      <Button size="icon" className="rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors" data-testid={`button-like-${user.id}`} onClick={() => likeMutation.mutate(user.id)} disabled={likeMutation.isPending}>
                         <Heart className="w-5 h-5" />
                       </Button>
                    </div>

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { User, InsertUser } from '@shared/schema';
 import { authAPI } from './api';
+import { queryClient } from './queryClient';
 
 interface AuthContextType {
   currentUser: Omit<User, "password"> | null;
@@ -46,6 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await authAPI.logout();
     setCurrentUser(null);
+    // Clear all cached queries to prevent stale data
+    queryClient.clear();
   };
 
   return (
